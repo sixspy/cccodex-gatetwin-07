@@ -40,7 +40,19 @@ CREATE TABLE IF NOT EXISTS 开腿账 (
   进站站点键 TEXT NOT NULL,
   进站事件时 TEXT NOT NULL,
   状态 TEXT NOT NULL DEFAULT '在途',
+  旁路原因 TEXT NOT NULL DEFAULT '',
   更新处理时 TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS 卡号换绑 (
+  换绑键 TEXT PRIMARY KEY,
+  旧卡 TEXT NOT NULL,
+  新卡 TEXT NOT NULL,
+  事件时 TEXT NOT NULL,
+  处理时 TEXT NOT NULL,
+  处置列表 TEXT NOT NULL DEFAULT '[]',
+  审计 TEXT NOT NULL DEFAULT '{}',
+  valid INTEGER NOT NULL DEFAULT 0,
+  来源 TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS 行程账 (
   行程键 TEXT PRIMARY KEY,
@@ -81,9 +93,29 @@ def 此刻() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _迁移(conn) -> None:
+    """老库补列/补站规，幂等。"""
+    列 = {r["name"] for r in conn.execute("PRAGMA table_info(开腿账)")}
+    if "旁路原因" not in 列:
+        conn.execute("ALTER TABLE 开腿账 ADD COLUMN 旁路原因 TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "UPDATE 开腿账 SET 旁路原因='重复进站' WHERE 状态='已旁路' AND 旁路原因=''"
+        )
+    for k, v in {
+        "卡号换绑口径": "切断旧开腿旁路",
+        "换绑在途开腿处置": "换绑事务内旧卡全部在途开腿旁路(换绑切断)，新卡从空开腿开始，禁止改开腿行卡号",
+    }.items():
+        conn.execute(
+            "INSERT INTO 站规(键, 值) VALUES (?, ?) "
+            "ON CONFLICT(键) DO UPDATE SET 值=excluded.值",
+            (k, v),
+        )
+
+
 def 初始化库() -> None:
     conn = 连接()
     conn.executescript(建表)
+    _迁移(conn)
     if conn.execute("SELECT COUNT(*) AS c FROM 站规").fetchone()["c"] == 0:
         for k, v in {
             "站名": "闸对",
@@ -91,6 +123,8 @@ def 初始化库() -> None:
             "同站进出": "允许",
             "重复进站策略": "旧腿旁路并开新腿",
             "配对策略": "同卡先进后出",
+            "卡号换绑口径": "切断旧开腿旁路",
+            "换绑在途开腿处置": "换绑事务内旧卡全部在途开腿旁路(换绑切断)，新卡从空开腿开始，禁止改开腿行卡号",
             "骨架": "刷卡点装载→同卡进站出站成对物化→缺腿异向超时旁路→行程账与刷卡点互证",
         }.items():
             conn.execute("INSERT INTO 站规(键, 值) VALUES (?, ?)", (k, v))

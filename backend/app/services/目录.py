@@ -17,8 +17,11 @@ def 总览() -> dict:
             "已成对": c("SELECT COUNT(*) FROM 刷卡点 WHERE 命运='已成对'"),
             "已旁路": c("SELECT COUNT(*) FROM 刷卡点 WHERE 命运='已旁路'"),
             "在途开腿": c("SELECT COUNT(*) FROM 开腿账 WHERE 状态='在途'"),
+            "换绑切断腿": c("SELECT COUNT(*) FROM 开腿账 WHERE 旁路原因='换绑切断'"),
             "行程数": c("SELECT COUNT(*) FROM 行程账 WHERE 状态='已成对'"),
             "旁路匣": c("SELECT COUNT(*) FROM 旁路匣"),
+            "换绑生效": c("SELECT COUNT(*) FROM 卡号换绑 WHERE valid=1"),
+            "换绑拒收": c("SELECT COUNT(*) FROM 卡号换绑 WHERE valid=0"),
             "装载批次": c("SELECT COUNT(*) FROM 装载批次"),
             "末次贯验": dict(末) if 末 else None,
         }

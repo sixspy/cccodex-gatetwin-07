@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import 夹具目录, 连接
-from app.services import 装载, 贯验, 目录
+from app.services import 装载, 贯验, 目录, 换绑
 
 路由 = APIRouter(prefix="/api")
 
@@ -11,6 +11,14 @@ from app.services import 装载, 贯验, 目录
 class 装载请求(BaseModel):
     批次编号: str = ""
     事件: list = Field(default_factory=list)
+    换绑: list = Field(default_factory=list)
+
+
+class 换绑请求(BaseModel):
+    旧卡: str
+    新卡: str
+    事件时: str = ""
+    换绑键: str = ""
 
 
 @路由.get("/健康")
@@ -135,6 +143,32 @@ def 装夹具(名: str = "成对样例"):
 @路由.post("/贯验")
 def 做贯验():
     return 贯验.跑贯验()
+
+
+@路由.post("/换绑")
+def 做换绑(体: 换绑请求):
+    """换绑写闸：单事务内切断旧卡在途开腿（切断旧开腿旁路口径），返回处置与审计。"""
+    conn = 连接()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            r = 换绑.做换绑(conn, 体.model_dump(), 来源="写闸")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+    if not r.get("valid") and not r.get("幂等跳过"):
+        # 闸门未过：审计已落库（valid=0），以 400 回交闸门原因
+        raise HTTPException(400, json.dumps(r, ensure_ascii=False))
+    return r
+
+
+@路由.get("/换绑")
+def 查换绑(旧卡: str = "", 新卡: str = ""):
+    """换绑只读接口：旧卡、新卡、开腿处置列表、审计、valid。"""
+    return 换绑.查换绑(旧卡, 新卡)
 
 
 @路由.get("/贯验")
